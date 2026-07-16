@@ -2,17 +2,24 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"twth/rpcproxy/internal/app"
+	"twth/rpcproxy/internal/buildinfo"
 	"twth/rpcproxy/internal/config"
 	"twth/rpcproxy/internal/proxy"
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Fprintln(os.Stdout, buildinfo.Current())
+		return
+	}
+
 	cfg, err := config.Load(os.LookupEnv)
 	if err != nil {
 		slog.Error("invalid configuration", "error", err)
@@ -28,7 +35,7 @@ func main() {
 		MaxRequestBytes: cfg.MaxRequestBytes,
 		Logger:          logger,
 	})
-	handler := app.NewHandler(proxyHandler, logger)
+	handler := app.NewHandler(proxyHandler, logger, buildinfo.Current())
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

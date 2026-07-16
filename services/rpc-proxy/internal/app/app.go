@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"twth/rpcproxy/internal/buildinfo"
 	"twth/rpcproxy/internal/config"
 )
 
@@ -20,7 +22,7 @@ const (
 	maxHeaderBytes    = 1 << 20
 )
 
-func NewHandler(next http.Handler, logger *slog.Logger) http.Handler {
+func NewHandler(next http.Handler, logger *slog.Logger, info buildinfo.Info) http.Handler {
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
@@ -33,6 +35,11 @@ func NewHandler(next http.Handler, logger *slog.Logger) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(w, "{\"status\":\"ok\"}\n")
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/version" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(info)
 			return
 		}
 		next.ServeHTTP(w, r)

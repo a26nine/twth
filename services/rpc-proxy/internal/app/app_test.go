@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"twth/rpcproxy/internal/buildinfo"
 	"twth/rpcproxy/internal/config"
 )
 
@@ -26,7 +27,7 @@ func TestHandlerServesHealth(t *testing.T) {
 		downstreamCalls++
 		w.WriteHeader(http.StatusTeapot)
 	})
-	handler := NewHandler(downstream, discardLogger())
+	handler := NewHandler(downstream, discardLogger(), buildinfo.Info{})
 
 	req := httptest.NewRequest(http.MethodGet, "http://proxy.test/healthz", nil)
 	res := httptest.NewRecorder()
@@ -46,11 +47,41 @@ func TestHandlerServesHealth(t *testing.T) {
 	}
 }
 
+func TestHandlerServesVersion(t *testing.T) {
+	downstreamCalls := 0
+	downstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		downstreamCalls++
+		w.WriteHeader(http.StatusTeapot)
+	})
+	info := buildinfo.Info{
+		Version: "1.2.3",
+		Commit:  "0123456789abcdef0123456789abcdef01234567",
+	}
+	handler := NewHandler(downstream, discardLogger(), info)
+
+	req := httptest.NewRequest(http.MethodGet, "http://proxy.test/version", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if got, want := res.Code, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got, want := res.Header().Get("Content-Type"), "application/json"; got != want {
+		t.Errorf("Content-Type = %q, want %q", got, want)
+	}
+	if got, want := res.Body.String(), "{\"version\":\"1.2.3\",\"commit\":\"0123456789abcdef0123456789abcdef01234567\"}\n"; got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+	if downstreamCalls != 0 {
+		t.Fatalf("downstream calls = %d, want 0", downstreamCalls)
+	}
+}
+
 func TestHandlerProxiesOtherRequests(t *testing.T) {
 	downstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
-	handler := NewHandler(downstream, discardLogger())
+	handler := NewHandler(downstream, discardLogger(), buildinfo.Info{})
 
 	for _, tc := range []struct {
 		method string
@@ -58,6 +89,7 @@ func TestHandlerProxiesOtherRequests(t *testing.T) {
 	}{
 		{method: http.MethodPost, path: "/"},
 		{method: http.MethodPost, path: "/healthz"},
+		{method: http.MethodPost, path: "/version"},
 		{method: http.MethodGet, path: "/other"},
 	} {
 		req := httptest.NewRequest(tc.method, "http://proxy.test"+tc.path, nil)
@@ -76,7 +108,7 @@ func TestHandlerLogsRequestMetadataWithoutBody(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, "abc")
 	})
-	handler := NewHandler(downstream, logger)
+	handler := NewHandler(downstream, logger, buildinfo.Info{})
 
 	req := httptest.NewRequest(http.MethodPost, "http://proxy.test/rpc?secret=do-not-log", strings.NewReader("sensitive-body"))
 	res := httptest.NewRecorder()

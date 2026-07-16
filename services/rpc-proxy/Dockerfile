@@ -4,6 +4,8 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
 
 RUN apk add --no-cache ca-certificates=20260611-r0
 
@@ -14,9 +16,18 @@ COPY internal ./internal
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -mod=readonly -trimpath -ldflags="-s -w" -o /out/rpc-proxy ./cmd/rpc-proxy
+    go build -mod=readonly -trimpath \
+    -ldflags="-s -w -X twth/rpcproxy/internal/buildinfo.version=${VERSION} -X twth/rpcproxy/internal/buildinfo.commit=${COMMIT}" \
+    -o /out/rpc-proxy ./cmd/rpc-proxy
 
 FROM scratch
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+
+LABEL org.opencontainers.image.title="rpc-proxy" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}"
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chmod=0555 /out/rpc-proxy /rpc-proxy

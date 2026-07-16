@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"twth/rpcproxy/internal/app"
+	"twth/rpcproxy/internal/buildinfo"
 )
 
 func testLogger() *slog.Logger {
@@ -645,7 +646,7 @@ func TestProxyStreamsFlushedChunksThroughLoggingMiddleware(t *testing.T) {
 		MaxRequestBytes: 1024,
 		Logger:          testLogger(),
 	})
-	server := httptest.NewServer(app.NewHandler(proxyHandler, testLogger()))
+	server := httptest.NewServer(app.NewHandler(proxyHandler, testLogger(), buildinfo.Info{}))
 	defer server.Close()
 
 	var response *http.Response

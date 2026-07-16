@@ -1,0 +1,192 @@
+name: RPC Proxy Release
+
+on:
+  push:
+    tags:
+      - 'rpc-proxy/v*'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/a26nine/twth-rpc-proxy
+
+jobs:
+  release_validation:
+    name: Release Validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      created: ${{ steps.version.outputs.created }}
+      major: ${{ steps.version.outputs.major }}
+      minor: ${{ steps.version.outputs.minor }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Validate release version
+        id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG_NAME#rpc-proxy/v}"
+          semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|([0-9]*[A-Za-z-][0-9A-Za-z-]*))(\.((0|[1-9][0-9]*)|([0-9]*[A-Za-z-][0-9A-Za-z-]*)))*)?$'
+          if [[ "${version}" == "${TAG_NAME}" || ! "${version}" =~ ${semver_regex} || ${#version} -gt 128 ]]; then
+            echo "Tag must match rpc-proxy/vX.Y.Z or rpc-proxy/vX.Y.Z-prerelease, fit a Docker tag, and omit build metadata." >&2
+            exit 1
+          fi
+
+          core="${version%%-*}"
+          IFS='.' read -r major minor _patch <<< "${core}"
+          prerelease=false
+          if [[ "${version}" == *-* ]]; then
+            prerelease=true
+          fi
+
+          created="$(git show -s --format=%cI "${GITHUB_SHA}")"
+          {
+            echo "version=${version}"
+            echo "major=${major}"
+            echo "minor=${minor}"
+            echo "prerelease=${prerelease}"
+            echo "created=${created}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: services/rpc-proxy/go.mod
+          cache-dependency-path: services/rpc-proxy/go.mod
+
+      - name: Check formatting
+        working-directory: services/rpc-proxy
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "${unformatted}" ]]; then
+            echo "The following Go files are not formatted:"
+            echo "${unformatted}"
+            exit 1
+          fi
+
+      - name: Run Go vet
+        working-directory: services/rpc-proxy
+        run: go vet ./...
+
+      - name: Run tests with race detector
+        working-directory: services/rpc-proxy
+        run: go test -race ./...
+
+  container_publication:
+    name: Container Publication
+    needs: release_validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.release_validation.outputs.version }}
+            type=raw,value=${{ needs.release_validation.outputs.major }}.${{ needs.release_validation.outputs.minor }},enable=${{ needs.release_validation.outputs.prerelease == 'false' }}
+            type=raw,value=${{ needs.release_validation.outputs.major }},enable=${{ needs.release_validation.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.release_validation.outputs.prerelease == 'false' }}
+          labels: |
+            org.opencontainers.image.created=${{ needs.release_validation.outputs.created }}
+            org.opencontainers.image.version=${{ needs.release_validation.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push container image
+        id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: services/rpc-proxy
+          file: services/rpc-proxy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.release_validation.outputs.version }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=rpc-proxy-release
+          cache-to: type=gha,mode=max,scope=rpc-proxy-release
+
+      - name: Attest container image
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+  github_release:
+    name: GitHub Release
+    needs:
+      - release_validation
+      - container_publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ needs.release_validation.outputs.prerelease }}
+          VERSION: ${{ needs.release_validation.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "GitHub Release ${GITHUB_REF_NAME} already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          args=(
+            release create "${GITHUB_REF_NAME}"
+            --repo "${GITHUB_REPOSITORY}"
+            --verify-tag
+            --generate-notes
+            --title "rpc-proxy v${VERSION}"
+          )
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
