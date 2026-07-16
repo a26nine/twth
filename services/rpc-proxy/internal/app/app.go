@@ -28,7 +28,7 @@ func NewHandler(next http.Handler, logger *slog.Logger) http.Handler {
 		logger = slog.Default()
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -36,6 +36,81 @@ func NewHandler(next http.Handler, logger *slog.Logger) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+	return logRequests(logger, router)
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (r *responseRecorder) WriteHeader(status int) {
+	if r.status != 0 {
+		return
+	}
+	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
+		r.ResponseWriter.WriteHeader(status)
+		return
+	}
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *responseRecorder) Write(p []byte) (int, error) {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	n, err := r.ResponseWriter.Write(p)
+	r.bytes += int64(n)
+	return n, err
+}
+
+func (r *responseRecorder) Flush() {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	_ = http.NewResponseController(r.ResponseWriter).Flush()
+}
+
+func (r *responseRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	var (
+		n   int64
+		err error
+	)
+	if readerFrom, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		n, err = readerFrom.ReadFrom(src)
+	} else {
+		n, err = io.Copy(r.ResponseWriter, src)
+	}
+	r.bytes += n
+	return n, err
+}
+
+func (r *responseRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
+func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		recorder := &responseRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		logger.Info("HTTP request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"bytes", recorder.bytes,
+			"duration", time.Since(started),
+		)
 	})
 }
 

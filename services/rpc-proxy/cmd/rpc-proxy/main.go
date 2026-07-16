@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"twth/rpcproxy/internal/app"
 	"twth/rpcproxy/internal/config"
+	"twth/rpcproxy/internal/proxy"
 )
 
 func main() {
@@ -20,10 +20,18 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	transport := proxy.NewTransport(cfg.UpstreamResponseHeaderTimeout)
+	defer transport.CloseIdleConnections()
+	proxyHandler := proxy.NewHandler(proxy.Options{
+		Upstream:        cfg.UpstreamURL,
+		Transport:       transport,
+		MaxRequestBytes: cfg.MaxRequestBytes,
+		Logger:          logger,
+	})
+	handler := app.NewHandler(proxyHandler, logger)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	handler := app.NewHandler(http.NotFoundHandler(), logger)
 	logger.Info("starting HTTP server", "address", cfg.ListenAddr, "upstream", cfg.UpstreamURL.Redacted())
 	if err := app.Run(ctx, cfg, handler, logger); err != nil {
 		logger.Error("HTTP server failed", "error", err)

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +67,179 @@ func TestHandlerProxiesOtherRequests(t *testing.T) {
 			t.Errorf("%s %s status = %d, want %d", tc.method, tc.path, got, want)
 		}
 	}
+}
+
+func TestHandlerLogsRequestMetadataWithoutBody(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	downstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, "abc")
+	})
+	handler := NewHandler(downstream, logger)
+
+	req := httptest.NewRequest(http.MethodPost, "http://proxy.test/rpc?secret=do-not-log", strings.NewReader("sensitive-body"))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	entry := logs.String()
+	for _, want := range []string{`"method":"POST"`, `"path":"/rpc"`, `"status":201`, `"bytes":3`} {
+		if !strings.Contains(entry, want) {
+			t.Errorf("log entry %q does not contain %q", entry, want)
+		}
+	}
+	for _, forbidden := range []string{"sensitive-body", "secret=do-not-log"} {
+		if strings.Contains(entry, forbidden) {
+			t.Errorf("log entry contains forbidden value %q: %s", forbidden, entry)
+		}
+	}
+}
+
+type statusRecordingWriter struct {
+	header   http.Header
+	statuses []int
+}
+
+func (w *statusRecordingWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *statusRecordingWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (w *statusRecordingWriter) WriteHeader(status int) {
+	w.statuses = append(w.statuses, status)
+}
+
+func TestResponseRecorderDoesNotLatchInformationalStatus(t *testing.T) {
+	underlying := &statusRecordingWriter{header: make(http.Header)}
+	recorder := &responseRecorder{ResponseWriter: underlying}
+
+	recorder.WriteHeader(http.StatusEarlyHints)
+	recorder.WriteHeader(http.StatusNoContent)
+
+	if got, want := recorder.status, http.StatusNoContent; got != want {
+		t.Fatalf("recorded status = %d, want %d", got, want)
+	}
+	if got, want := fmt.Sprint(underlying.statuses), "[103 204]"; got != want {
+		t.Fatalf("delegated statuses = %s, want %s", got, want)
+	}
+}
+
+func TestResponseRecorderTreatsSwitchingProtocolsAsFinal(t *testing.T) {
+	underlying := &statusRecordingWriter{header: make(http.Header)}
+	recorder := &responseRecorder{ResponseWriter: underlying}
+
+	recorder.WriteHeader(http.StatusSwitchingProtocols)
+	recorder.WriteHeader(http.StatusNoContent)
+
+	if got, want := recorder.status, http.StatusSwitchingProtocols; got != want {
+		t.Fatalf("recorded status = %d, want %d", got, want)
+	}
+	if got, want := fmt.Sprint(underlying.statuses), "[101]"; got != want {
+		t.Fatalf("delegated statuses = %s, want %s", got, want)
+	}
+}
+
+type readerFromResponseWriter struct {
+	header          http.Header
+	status          int
+	body            bytes.Buffer
+	readerFromCalls int
+}
+
+func (w *readerFromResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *readerFromResponseWriter) Write(p []byte) (int, error) {
+	return w.body.Write(p)
+}
+
+func (w *readerFromResponseWriter) WriteHeader(status int) {
+	w.status = status
+}
+
+func (w *readerFromResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.readerFromCalls++
+	return io.Copy(&w.body, src)
+}
+
+type basicResponseWriter struct {
+	header     http.Header
+	status     int
+	body       bytes.Buffer
+	writeCalls int
+}
+
+func (w *basicResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *basicResponseWriter) Write(p []byte) (int, error) {
+	w.writeCalls++
+	return w.body.Write(p)
+}
+
+func (w *basicResponseWriter) WriteHeader(status int) {
+	w.status = status
+}
+
+func TestResponseRecorderReadFrom(t *testing.T) {
+	const payload = "streamed response"
+
+	t.Run("delegates to ReaderFrom", func(t *testing.T) {
+		underlying := &readerFromResponseWriter{header: make(http.Header)}
+		recorder := &responseRecorder{ResponseWriter: underlying}
+
+		n, err := recorder.ReadFrom(strings.NewReader(payload))
+
+		if err != nil {
+			t.Fatalf("ReadFrom() error = %v", err)
+		}
+		if got, want := n, int64(len(payload)); got != want {
+			t.Errorf("ReadFrom() bytes = %d, want %d", got, want)
+		}
+		if got, want := recorder.bytes, int64(len(payload)); got != want {
+			t.Errorf("recorded bytes = %d, want %d", got, want)
+		}
+		if underlying.readerFromCalls != 1 {
+			t.Errorf("underlying ReadFrom calls = %d, want 1", underlying.readerFromCalls)
+		}
+		if got, want := underlying.status, http.StatusOK; got != want {
+			t.Errorf("underlying status = %d, want %d", got, want)
+		}
+		if got := underlying.body.String(); got != payload {
+			t.Errorf("underlying body = %q, want %q", got, payload)
+		}
+	})
+
+	t.Run("falls back to copy", func(t *testing.T) {
+		underlying := &basicResponseWriter{header: make(http.Header)}
+		recorder := &responseRecorder{ResponseWriter: underlying}
+
+		n, err := recorder.ReadFrom(strings.NewReader(payload))
+
+		if err != nil {
+			t.Fatalf("ReadFrom() error = %v", err)
+		}
+		if got, want := n, int64(len(payload)); got != want {
+			t.Errorf("ReadFrom() bytes = %d, want %d", got, want)
+		}
+		if got, want := recorder.bytes, int64(len(payload)); got != want {
+			t.Errorf("recorded bytes = %d, want %d", got, want)
+		}
+		if underlying.writeCalls == 0 {
+			t.Error("fallback did not write to underlying response writer")
+		}
+		if got, want := underlying.status, http.StatusOK; got != want {
+			t.Errorf("underlying status = %d, want %d", got, want)
+		}
+		if got := underlying.body.String(); got != payload {
+			t.Errorf("underlying body = %q, want %q", got, payload)
+		}
+	})
 }
 
 func TestRunGracefullyDrainsInFlightRequest(t *testing.T) {
