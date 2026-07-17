@@ -1,0 +1,5 @@
+public_hostname      = "rpc.example.com"
+github_owner         = "example-org"
+github_owner_id      = 11111111
+github_repository    = "example-repository"
+github_repository_id = 22222222
