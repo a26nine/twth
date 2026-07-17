@@ -2,9 +2,15 @@ name: RPC Proxy CI
 
 on:
   pull_request:
+    paths:
+      - 'services/rpc-proxy/**'
+      - '.github/workflows/rpc-proxy-ci.yml'
   push:
     branches:
       - main
+    paths:
+      - 'services/rpc-proxy/**'
+      - '.github/workflows/rpc-proxy-ci.yml'
 
 permissions:
   contents: read

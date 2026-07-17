@@ -2,9 +2,15 @@ name: RPC Proxy Live Compatibility
 
 on:
   pull_request:
+    paths:
+      - 'services/rpc-proxy/**'
+      - '.github/workflows/rpc-proxy-live-compatibility.yml'
   push:
     branches:
       - main
+    paths:
+      - 'services/rpc-proxy/**'
+      - '.github/workflows/rpc-proxy-live-compatibility.yml'
   workflow_dispatch:
 
 permissions:
