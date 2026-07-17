@@ -162,15 +162,20 @@ resource "aws_iam_role_policy" "github_deploy" {
         Resource = "${aws_s3_bucket.terraform_state.arn}/${local.state_key}.tflock"
       },
       {
-        Sid      = "ManageServiceDNS"
-        Effect   = "Allow"
-        Action   = ["route53:ChangeResourceRecordSets", "route53:GetHostedZone", "route53:ListResourceRecordSets"]
+        Sid    = "ManageServiceDNS"
+        Effect = "Allow"
+        Action = [
+          "route53:ChangeResourceRecordSets",
+          "route53:GetHostedZone",
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource",
+        ]
         Resource = aws_route53_zone.service.arn
       },
       {
         Sid      = "ReadRoute53Changes"
         Effect   = "Allow"
-        Action   = ["route53:GetChange", "route53:ListHostedZonesByName"]
+        Action   = ["route53:GetChange", "route53:ListHostedZones", "route53:ListHostedZonesByName"]
         Resource = "*"
       },
       {
@@ -193,11 +198,13 @@ resource "aws_iam_role_policy" "github_deploy" {
           "application-autoscaling:RegisterScalableTarget",
           "application-autoscaling:TagResource",
           "application-autoscaling:UntagResource",
+          "ec2:AllocateAddress",
           "ec2:AssociateRouteTable",
           "ec2:AttachInternetGateway",
           "ec2:AuthorizeSecurityGroupEgress",
           "ec2:AuthorizeSecurityGroupIngress",
           "ec2:CreateInternetGateway",
+          "ec2:CreateNatGateway",
           "ec2:CreateRoute",
           "ec2:CreateRouteTable",
           "ec2:CreateSecurityGroup",
@@ -205,6 +212,7 @@ resource "aws_iam_role_policy" "github_deploy" {
           "ec2:CreateTags",
           "ec2:CreateVpc",
           "ec2:DeleteInternetGateway",
+          "ec2:DeleteNatGateway",
           "ec2:DeleteRoute",
           "ec2:DeleteRouteTable",
           "ec2:DeleteSecurityGroup",
@@ -217,6 +225,7 @@ resource "aws_iam_role_policy" "github_deploy" {
           "ec2:ModifySubnetAttribute",
           "ec2:ModifySecurityGroupRules",
           "ec2:ModifyVpcAttribute",
+          "ec2:ReleaseAddress",
           "ec2:ReplaceRoute",
           "ec2:ReplaceRouteTableAssociation",
           "ec2:RevokeSecurityGroupEgress",

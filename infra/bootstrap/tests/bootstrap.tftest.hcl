@@ -121,7 +121,35 @@ run "secure_bootstrap_defaults" {
     condition = (
       strcontains(aws_iam_role_policy.github_deploy.policy, "twth/application.tfstate") &&
       strcontains(aws_iam_role_policy.github_deploy.policy, "iam:PassRole") &&
-      strcontains(aws_iam_role_policy.github_deploy.policy, "route53:ChangeResourceRecordSets") &&
+      alltrue([
+        for action in [
+          "route53:ChangeResourceRecordSets",
+          "route53:GetHostedZone",
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource",
+          ] : contains(toset(one([
+            for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Action
+            if statement.Sid == "ManageServiceDNS"
+        ])), action)
+      ]) &&
+      one([
+        for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Resource
+        if statement.Sid == "ManageServiceDNS"
+      ]) == "arn:aws:route53:::hostedzone/Z0123456789" &&
+      alltrue([
+        for action in [
+          "route53:GetChange",
+          "route53:ListHostedZones",
+          "route53:ListHostedZonesByName",
+          ] : contains(toset(one([
+            for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Action
+            if statement.Sid == "ReadRoute53Changes"
+        ])), action)
+      ]) &&
+      one([
+        for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Resource
+        if statement.Sid == "ReadRoute53Changes"
+      ]) == "*" &&
       !strcontains(aws_iam_role_policy.github_deploy.policy, "ecr:") &&
       !strcontains(aws_iam_role_policy.github_deploy.policy, "iam:AttachRolePolicy") &&
       !strcontains(aws_iam_role_policy.github_deploy.policy, "iam:DetachRolePolicy")
@@ -170,6 +198,21 @@ run "secure_bootstrap_defaults" {
       ]), action)
     ])
     error_message = "The deploy role must be able to reconcile normal ALB listener, security-group, and subnet changes."
+  }
+
+  assert {
+    condition = alltrue([
+      for action in [
+        "ec2:AllocateAddress",
+        "ec2:CreateNatGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:ReleaseAddress",
+        ] : contains(toset(one([
+          for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Action
+          if statement.Sid == "ManageApplicationInfrastructure"
+      ])), action)
+    ])
+    error_message = "The deploy role must manage the complete Elastic IP and NAT Gateway lifecycle."
   }
 
   assert {
