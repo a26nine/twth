@@ -24,7 +24,7 @@ export LOCAL_IMAGE CONTAINER_NAME CONTAINER_PORT
 
 .PHONY: help fmt fmt-check vet test-go test-infra test build \
 	docker-build scripts-check test-container check verify \
-	local-up local-down test-live \
+	local-up local-down dashboard test-live \
 	bootstrap-init bootstrap-plan bootstrap bootstrap-outputs \
 	backend-init plan deploy smoke teardown bootstrap-teardown
 
@@ -73,10 +73,10 @@ docker-build: ## Build and load the linux/amd64 production image
 		--tag $(LOCAL_IMAGE) $(SERVICE_DIR)
 
 scripts-check: ## Parse and test repository operations scripts
-	bash -n scripts/aws/*.sh scripts/tests/*.sh scripts/test-container.sh scripts/test-infra.sh
+	bash -n scripts/aws/*.sh scripts/tests/*.sh scripts/block-dashboard.sh scripts/test-container.sh scripts/test-infra.sh
 	bash scripts/tests/common_test.sh
-	bash scripts/tests/test_operation_guards.sh
-	bash scripts/tests/test_infra_isolation_test.sh
+	bash scripts/tests/operation_guards_test.sh
+	bash scripts/tests/infra_isolation_test.sh
 
 test-container: docker-build ## Verify the production container contract
 	bash scripts/test-container.sh
@@ -92,6 +92,9 @@ local-up: ## Build and start the local Compose service
 
 local-down: ## Stop the local Compose service and remove orphans
 	docker compose down --remove-orphans
+
+dashboard: ## Show latest block data through the deployed RPC proxy
+	bash scripts/block-dashboard.sh
 
 test-live: ## Run the optional live dRPC compatibility test
 	cd $(SERVICE_DIR) && RPC_LIVE=1 go test -race -count=1 -v \
