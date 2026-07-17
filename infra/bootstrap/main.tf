@@ -274,70 +274,24 @@ resource "aws_iam_role_policy" "github_deploy" {
         Resource = "*"
       },
       {
-        Sid      = "ECRAuthorization"
-        Effect   = "Allow"
-        Action   = "ecr:GetAuthorizationToken"
-        Resource = "*"
-      },
-      {
-        Sid    = "ManageApplicationRepository"
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:BatchDeleteImage",
-          "ecr:BatchGetImage",
-          "ecr:CompleteLayerUpload",
-          "ecr:CreateRepository",
-          "ecr:DeleteLifecyclePolicy",
-          "ecr:DeleteRepository",
-          "ecr:DescribeImages",
-          "ecr:DescribeRepositories",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetLifecyclePolicy",
-          "ecr:GetLifecyclePolicyPreview",
-          "ecr:GetRepositoryPolicy",
-          "ecr:InitiateLayerUpload",
-          "ecr:ListImages",
-          "ecr:ListTagsForResource",
-          "ecr:PutImage",
-          "ecr:PutImageScanningConfiguration",
-          "ecr:PutImageTagMutability",
-          "ecr:PutLifecyclePolicy",
-          "ecr:SetRepositoryPolicy",
-          "ecr:StartLifecyclePolicyPreview",
-          "ecr:TagResource",
-          "ecr:UntagResource",
-          "ecr:UploadLayerPart",
-        ]
-        Resource = "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/polygon-rpc-proxy"
-      },
-      {
         Sid    = "ManageTaskExecutionRole"
         Effect = "Allow"
         Action = [
           "iam:CreateRole",
+          "iam:DeleteRolePolicy",
           "iam:DeleteRole",
           "iam:GetRole",
+          "iam:GetRolePolicy",
           "iam:ListAttachedRolePolicies",
           "iam:ListInstanceProfilesForRole",
           "iam:ListRolePolicies",
           "iam:ListRoleTags",
+          "iam:PutRolePolicy",
           "iam:TagRole",
           "iam:UntagRole",
           "iam:UpdateAssumeRolePolicy",
         ]
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/polygon-rpc-proxy-execution"
-      },
-      {
-        Sid      = "AttachTaskExecutionPolicy"
-        Effect   = "Allow"
-        Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/polygon-rpc-proxy-execution"
-        Condition = {
-          StringEquals = {
-            "iam:PolicyARN" = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-          }
-        }
       },
       {
         Sid      = "PassTaskExecutionRole"

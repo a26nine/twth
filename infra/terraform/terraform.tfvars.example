@@ -1,0 +1,3 @@
+aws_account_id  = "123456789012"
+public_hostname = "rpc.example.com"
+image_digest    = "sha256:0c0a95f66ee00ba3ecb44a75b40181e6a9d7432b1deeeedd30e2e16c0c1ee175"

@@ -121,25 +121,30 @@ run "secure_bootstrap_defaults" {
     condition = (
       strcontains(aws_iam_role_policy.github_deploy.policy, "twth/application.tfstate") &&
       strcontains(aws_iam_role_policy.github_deploy.policy, "iam:PassRole") &&
-      strcontains(aws_iam_role_policy.github_deploy.policy, "route53:ChangeResourceRecordSets")
+      strcontains(aws_iam_role_policy.github_deploy.policy, "route53:ChangeResourceRecordSets") &&
+      !strcontains(aws_iam_role_policy.github_deploy.policy, "ecr:") &&
+      !strcontains(aws_iam_role_policy.github_deploy.policy, "iam:AttachRolePolicy") &&
+      !strcontains(aws_iam_role_policy.github_deploy.policy, "iam:DetachRolePolicy")
     )
-    error_message = "The deploy policy must cover locked state, PassRole, and application DNS."
+    error_message = "The deploy policy must cover the application without ECR or managed-policy attachment permissions."
   }
 
   assert {
     condition = (
-      toset(one([
-        for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Action
-        if statement.Sid == "AttachTaskExecutionPolicy"
-      ])) == toset(["iam:AttachRolePolicy", "iam:DetachRolePolicy"]) &&
+      alltrue([
+        for action in [
+          "iam:DeleteRolePolicy",
+          "iam:GetRolePolicy",
+          "iam:PutRolePolicy",
+          ] : contains(toset(one([
+            for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Action
+            if statement.Sid == "ManageTaskExecutionRole"
+        ])), action)
+      ]) &&
       one([
-        for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Condition.StringEquals["iam:PolicyARN"]
-        if statement.Sid == "AttachTaskExecutionPolicy"
-      ]) == "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" &&
-      !contains(toset(one([
         for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Action
-        if statement.Sid == "ManageTaskExecutionRole"
-      ])), "iam:AttachRolePolicy") &&
+        if statement.Sid == "PassTaskExecutionRole"
+      ]) == "iam:PassRole" &&
       one([
         for statement in jsondecode(aws_iam_role_policy.github_deploy.policy).Statement : statement.Resource
         if statement.Sid == "PassTaskExecutionRole"
@@ -150,7 +155,7 @@ run "secure_bootstrap_defaults" {
       ]) == "ecs-tasks.amazonaws.com" &&
       !strcontains(aws_iam_role_policy.github_deploy.policy, "iam:*")
     )
-    error_message = "The deploy role may attach only AmazonECSTaskExecutionRolePolicy to the task execution role."
+    error_message = "The deploy role may manage only the task role's inline policy and pass that role to ECS tasks."
   }
 
   assert {
