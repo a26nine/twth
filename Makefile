@@ -61,7 +61,7 @@ test-go: ## Run Go tests with the race detector
 	cd $(SERVICE_DIR) && go test -race ./...
 
 test-infra: ## Validate and test both Terraform roots
-	bash scripts/test-infra.sh
+	bash scripts/utils/test-infra.sh
 
 test: test-go test-infra ## Run Go and Terraform tests
 
@@ -73,13 +73,13 @@ docker-build: ## Build and load the linux/amd64 production image
 		--tag $(LOCAL_IMAGE) $(SERVICE_DIR)
 
 scripts-check: ## Parse and test repository operations scripts
-	bash -n scripts/aws/*.sh scripts/tests/*.sh scripts/block-dashboard.sh scripts/test-container.sh scripts/test-infra.sh
+	bash -n scripts/aws/*.sh scripts/tests/*.sh scripts/utils/*.sh
 	bash scripts/tests/common_test.sh
 	bash scripts/tests/operation_guards_test.sh
 	bash scripts/tests/infra_isolation_test.sh
 
 test-container: docker-build ## Verify the production container contract
-	bash scripts/test-container.sh
+	bash scripts/utils/test-container.sh
 
 check: fmt-check vet test build scripts-check ## Run deterministic source and unit checks
 
@@ -94,7 +94,7 @@ local-down: ## Stop the local Compose service and remove orphans
 	docker compose down --remove-orphans
 
 dashboard: ## Show latest block data through the deployed RPC proxy
-	bash scripts/block-dashboard.sh
+	bash scripts/utils/block-dashboard.sh
 
 test-live: ## Run the optional live dRPC compatibility test
 	cd $(SERVICE_DIR) && RPC_LIVE=1 go test -race -count=1 -v \

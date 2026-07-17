@@ -25,7 +25,7 @@ env \
   PATH="${stub_dir}:${PATH}" \
   INFRA_CALL_LOG="${call_log}" \
   AWS_PROFILE=must-not-leak \
-  bash "${REPOSITORY_ROOT}/scripts/test-infra.sh"
+  bash "${REPOSITORY_ROOT}/scripts/utils/test-infra.sh"
 
 calls=()
 while IFS= read -r call; do

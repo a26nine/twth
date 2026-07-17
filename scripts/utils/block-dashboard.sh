@@ -13,7 +13,7 @@ last_error="none"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/block-dashboard.sh [--url URL] [--interval SECONDS] [--once]
+Usage: scripts/utils/block-dashboard.sh [--url URL] [--interval SECONDS] [--once]
 
 Poll an EVM-compatible HTTP JSON-RPC endpoint and render the latest block.
 

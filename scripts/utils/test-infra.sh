@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-readonly PROJECT_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd -P)
+readonly PROJECT_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd -P)
 readonly BOOTSTRAP_DIR="${PROJECT_ROOT}/infra/bootstrap"
 readonly APPLICATION_DIR="${PROJECT_ROOT}/infra/terraform"
 
