@@ -24,8 +24,18 @@ output "vpc_id" {
 }
 
 output "public_subnet_ids" {
-  description = "Public subnet IDs used by the ALB and Fargate tasks."
+  description = "Public subnet IDs used by the ALB and NAT Gateways."
   value       = aws_subnet.public[*].id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used by Fargate tasks."
+  value       = aws_subnet.private[*].id
+}
+
+output "nat_gateway_ids" {
+  description = "NAT Gateway IDs used for private subnet egress."
+  value       = aws_nat_gateway.this[*].id
 }
 
 output "alb_security_group_id" {

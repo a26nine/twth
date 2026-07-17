@@ -79,6 +79,34 @@ run "mocked_foundation_plan" {
 
   assert {
     condition = (
+      length(aws_subnet.private) == 2 &&
+      aws_subnet.private[0].availability_zone == "us-east-1a" &&
+      aws_subnet.private[1].availability_zone == "us-east-1b" &&
+      aws_subnet.private[0].cidr_block == "10.20.10.0/24" &&
+      aws_subnet.private[1].cidr_block == "10.20.11.0/24" &&
+      !aws_subnet.private[0].map_public_ip_on_launch &&
+      !aws_subnet.private[1].map_public_ip_on_launch
+    )
+    error_message = "Two private subnets across two AZs must be reserved for Fargate tasks."
+  }
+
+  assert {
+    condition = (
+      length(aws_eip.nat) == 2 &&
+      aws_eip.nat[0].domain == "vpc" &&
+      aws_eip.nat[1].domain == "vpc" &&
+      length(aws_nat_gateway.this) == 2 &&
+      length(aws_route_table.private) == 2 &&
+      length(aws_route.private_internet) == 2 &&
+      aws_route.private_internet[0].destination_cidr_block == "0.0.0.0/0" &&
+      aws_route.private_internet[1].destination_cidr_block == "0.0.0.0/0" &&
+      length(aws_route_table_association.private) == 2
+    )
+    error_message = "Each private subnet must use a same-AZ NAT Gateway for default egress."
+  }
+
+  assert {
+    condition = (
       aws_vpc_security_group_ingress_rule.alb_http.from_port == 80 &&
       aws_vpc_security_group_ingress_rule.alb_https.from_port == 443 &&
       aws_vpc_security_group_egress_rule.alb_to_tasks.to_port == 8080 &&

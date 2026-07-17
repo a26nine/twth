@@ -47,6 +47,17 @@ variable "public_subnet_cidrs" {
   }
 }
 
+variable "private_subnet_cidrs" {
+  description = "IPv4 CIDR blocks for the two private Fargate subnets."
+  type        = list(string)
+  default     = ["10.20.10.0/24", "10.20.11.0/24"]
+
+  validation {
+    condition     = length(var.private_subnet_cidrs) == 2
+    error_message = "Exactly two private subnet CIDRs are required."
+  }
+}
+
 variable "image_digest" {
   description = "Immutable SHA-256 digest of the public GHCR release image to deploy."
   type        = string

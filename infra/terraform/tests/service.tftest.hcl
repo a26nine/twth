@@ -167,13 +167,13 @@ run "secure_https_service" {
   }
 
   assert {
-    condition     = aws_ecs_service.this.network_configuration[0].assign_public_ip
-    error_message = "Fargate tasks must receive public IPs for HTTPS egress."
+    condition     = !aws_ecs_service.this.network_configuration[0].assign_public_ip
+    error_message = "Fargate tasks must not receive public IPs."
   }
 
   assert {
-    condition     = length(aws_subnet.public) == 2
-    error_message = "Fargate must run in two subnets."
+    condition     = length(aws_subnet.private) == 2
+    error_message = "Fargate must run in the two private subnets."
   }
 
   assert {
@@ -188,7 +188,9 @@ run "secure_https_service" {
     condition = (
       output.service_url == "https://rpc.example.com" &&
       output.certificate_arn == aws_acm_certificate.this.arn &&
-      output.waf_web_acl_arn == aws_wafv2_web_acl.this.arn
+      output.waf_web_acl_arn == aws_wafv2_web_acl.this.arn &&
+      length(output.private_subnet_ids) == 2 &&
+      length(output.nat_gateway_ids) == 2
     )
     error_message = "Public service outputs are incomplete."
   }
