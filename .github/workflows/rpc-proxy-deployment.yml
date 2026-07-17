@@ -43,13 +43,53 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "${AWS_ACCOUNT_ID}" =~ ^[0-9]{12}$ ]]
-          [[ "${AWS_ROLE_ARN}" == "arn:aws:iam::${AWS_ACCOUNT_ID}:role/twth-github-deploy" ]]
-          [[ "${TF_STATE_BUCKET}" == "twth-terraform-state-${AWS_ACCOUNT_ID}" ]]
-          [[ -n "${PUBLIC_HOSTNAME}" ]]
+
+          failed=false
+          require_match() {
+            local name="$1"
+            local value="$2"
+            local regex="$3"
+            local message="$4"
+
+            if [[ ! "${value}" =~ ${regex} ]]; then
+              echo "::error title=Invalid repository variable::${name} ${message}"
+              failed=true
+            fi
+          }
+
+          require_equal() {
+            local name="$1"
+            local actual="$2"
+            local expected="$3"
+
+            if [[ "${actual}" != "${expected}" ]]; then
+              echo "::error title=Invalid repository variable::${name} must be ${expected}"
+              failed=true
+            fi
+          }
+
+          aws_account_id_regex='^[0-9]{12}$'
+          require_match AWS_ACCOUNT_ID "${AWS_ACCOUNT_ID}" "${aws_account_id_regex}" "must be a 12-digit AWS account ID."
+          if [[ "${AWS_ACCOUNT_ID}" =~ ${aws_account_id_regex} ]]; then
+            require_equal AWS_ROLE_ARN "${AWS_ROLE_ARN}" "arn:aws:iam::${AWS_ACCOUNT_ID}:role/twth-github-deploy"
+            require_equal TF_STATE_BUCKET "${TF_STATE_BUCKET}" "twth-terraform-state-${AWS_ACCOUNT_ID}"
+          else
+            require_match AWS_ROLE_ARN "${AWS_ROLE_ARN}" '^arn:aws:iam::[0-9]{12}:role/twth-github-deploy$' "must be the bootstrap github_deploy_role_arn output."
+            require_match TF_STATE_BUCKET "${TF_STATE_BUCKET}" '^twth-terraform-state-[0-9]{12}$' "must be the bootstrap state_bucket_name output."
+          fi
+          require_match PUBLIC_HOSTNAME "${PUBLIC_HOSTNAME}" '^.+$' "must be the delegated public service hostname."
+
           semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|([0-9]*[A-Za-z-][0-9A-Za-z-]*))(\.((0|[1-9][0-9]*)|([0-9]*[A-Za-z-][0-9A-Za-z-]*)))*)?$'
-          [[ "${IMAGE_VERSION}" =~ ${semver_regex} ]]
-          (( ${#IMAGE_VERSION} <= 128 ))
+          require_match IMAGE_VERSION "${IMAGE_VERSION}" "${semver_regex}" "must be SemVer, such as 0.1.0, without build metadata."
+          if (( ${#IMAGE_VERSION} > 128 )); then
+            echo "::error title=Invalid workflow input::IMAGE_VERSION must be 128 characters or fewer."
+            failed=true
+          fi
+
+          if [[ "${failed}" == "true" ]]; then
+            echo "Create or update these values in Settings > Secrets and variables > Actions > Variables." >&2
+            exit 1
+          fi
 
       - name: Configure AWS credentials through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@acca2b1b2070338fb9fd1ca27ecee81d687e58e5 # v6.1.2
